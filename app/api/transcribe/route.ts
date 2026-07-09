@@ -7,10 +7,13 @@ export const dynamic = "force-dynamic";
 // Give the request room to breathe while the model warms up / transcribes.
 export const maxDuration = 60;
 
-// Default model for the "cloud" mode. This must be a model that is actually
-// served by an HF inference provider. The Chonlasitk Burmese fine-tune is NOT
-// hosted by any provider, so use it via the "custom endpoint" mode instead.
-const DEFAULT_MODEL = process.env.HF_MODEL || "openai/whisper-large-v3";
+// Default model for the "cloud" mode. Must be a model that is actually served
+// AND warm on the hf-inference provider. whisper-large-v3-turbo responds in
+// well under a second; plain whisper-large-v3 cold-starts for >60s and times
+// out the serverless function, and whisper-small/base/tiny are "not supported
+// by provider hf-inference". The Chonlasitk Burmese fine-tune isn't hosted by
+// any provider — use it via "custom endpoint" mode instead.
+const DEFAULT_MODEL = process.env.HF_MODEL || "openai/whisper-large-v3-turbo";
 
 // Hugging Face migrated the classic serverless endpoint
 // (api-inference.huggingface.co, now decommissioned) to the Inference
@@ -214,6 +217,15 @@ export async function POST(req: Request) {
             mode === "custom"
               ? "The custom endpoint rejected the request (401/403). It may need a token."
               : "Hugging Face rejected the token (401/403). The token likely lacks Inference permission — create a token with \"Make calls to Inference Providers\" enabled (or a classic Read token), and make sure it's set in the server env and redeployed.",
+          detail: detail?.slice(0, 300),
+        },
+        { status: 502 }
+      );
+    }
+    if (hfRes.status === 400 && /not supported by provider/i.test(detail)) {
+      return NextResponse.json(
+        {
+          error: `Model "${model}" isn't served by hf-inference. Use "openai/whisper-large-v3-turbo" (fast + multilingual), or switch to On-device / Custom mode.`,
           detail: detail?.slice(0, 300),
         },
         { status: 502 }

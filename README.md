@@ -25,7 +25,7 @@ Built with **Next.js (App Router)** and ready to **deploy on Vercel**.
 
 | Mode | Where it runs | Model | Needs token? | Best for |
 | ---- | ------------- | ----- | ------------ | -------- |
-| ☁️ **Cloud** | Hugging Face router (server route) | `openai/whisper-large-v3` (configurable) | ✅ `HF_TOKEN` | Works instantly, no download |
+| ☁️ **Cloud** | Hugging Face router (server route) | `openai/whisper-large-v3-turbo` (configurable) | ✅ `HF_TOKEN` | Works instantly, no download |
 | 🖥️ **On-device** | 100% in the browser via [`@huggingface/transformers`](https://github.com/huggingface/transformers.js) (WebGPU → WASM) | `whisper-base` / `small` / `large-v3-turbo` | ❌ none | Real offline, private — audio never leaves the device |
 | 🔗 **Custom** | Your own endpoint | Anything, e.g. `Chonlasitk/whisper-burmese` | optional | Best Burmese accuracy with the fine-tune |
 
@@ -64,7 +64,7 @@ Open http://localhost:3000
    | Name       | Value                        |
    | ---------- | ---------------------------- |
    | `HF_TOKEN` | your Hugging Face token      |
-   | `HF_MODEL` | `openai/whisper-large-v3` (optional) |
+   | `HF_MODEL` | `openai/whisper-large-v3-turbo` (optional) |
 4. Click **Deploy**. Vercel auto-detects Next.js — no extra config needed.
 
 Or with the CLI:
@@ -97,7 +97,7 @@ git push -u origin main
 | Variable         | Required | Default                    | Description                                             |
 | ---------------- | -------- | -------------------------- | ------------------------------------------------------- |
 | `HF_TOKEN`       | Cloud only | —                        | Hugging Face access token (Read scope).                 |
-| `HF_MODEL`       | no       | `openai/whisper-large-v3`  | Cloud-mode model — must be a provider-hosted ASR model. |
+| `HF_MODEL`       | no       | `openai/whisper-large-v3-turbo`  | Cloud-mode model — must be **served + warm** on hf-inference (turbo works; plain large-v3 cold-starts and times out). |
 | `HF_ENDPOINT_URL`| no       | —                          | Default URL for Custom mode (overridable in the UI).    |
 
 ---

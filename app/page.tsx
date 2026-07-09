@@ -385,9 +385,9 @@ export default function Home() {
         <div className="mode-config">
           {mode === "cloud" && (
             <p className="hint">
-              Uses <code>openai/whisper-large-v3</code> via the Hugging Face
-              router (needs <code>HF_TOKEN</code> on the server). Multilingual —
-              handles Burmese out of the box.
+              Uses <code>openai/whisper-large-v3-turbo</code> via the Hugging
+              Face router (needs <code>HF_TOKEN</code> on the server). Fast,
+              multilingual — handles Burmese out of the box.
             </p>
           )}
           {mode === "browser" && (
