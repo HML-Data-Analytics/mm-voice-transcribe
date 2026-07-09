@@ -274,8 +274,26 @@ export default function Home() {
     form.append("mode", mode);
     if (mode === "custom") form.append("endpoint", endpoint.trim());
     const res = await fetch("/api/transcribe", { method: "POST", body: form });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data?.error || "Transcription failed.");
+    // The response may not be JSON (e.g. a Vercel platform error page when the
+    // function times out or crashes), so parse defensively.
+    const raw = await res.text();
+    let data: any = null;
+    try {
+      data = raw ? JSON.parse(raw) : null;
+    } catch {
+      /* non-JSON body */
+    }
+    if (!res.ok || !data) {
+      if (data?.error) throw new Error(data.error);
+      if (res.status === 504 || /timed out|timeout/i.test(raw)) {
+        throw new Error(
+          "The cloud function timed out while the model warmed up. Try again in ~20s (the model is loading), use a shorter clip, or switch to On-device mode."
+        );
+      }
+      throw new Error(
+        `Transcription failed (HTTP ${res.status}). ${raw.slice(0, 120).replace(/\s+/g, " ").trim()}`
+      );
+    }
     setTranscript(data.text || "(no speech detected)");
   }, [audioBlob, fileName, mode, endpoint]);
 

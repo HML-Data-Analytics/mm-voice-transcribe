@@ -112,8 +112,11 @@ export async function POST(req: Request) {
     headers["x-wait-for-model"] = "true";
   }
 
-  // The model can be cold. Retry a few times while it loads (503 + estimated_time).
+  // The model can be cold. Retry while it loads (503 + estimated_time), but
+  // stay under the function time limit so we always return clean JSON instead
+  // of letting the platform kill the request with an HTML error page.
   const maxAttempts = 4;
+  const deadline = Date.now() + 45_000; // leave headroom under maxDuration (60s)
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let hfRes: Response;
     try {
@@ -145,15 +148,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ text: text.trim(), model: mode === "custom" ? endpoint : model });
     }
 
-    // Model still loading — wait and retry.
+    // Model still loading — wait and retry, but only if there's time left.
     if (hfRes.status === 503 && attempt < maxAttempts) {
       const info = await hfRes.json().catch(() => null);
       const waitMs = Math.min(
         Math.round((((info as any)?.estimated_time as number) || 8) * 1000),
-        20000
+        10000
       );
-      await new Promise((r) => setTimeout(r, waitMs));
-      continue;
+      if (Date.now() + waitMs < deadline) {
+        await new Promise((r) => setTimeout(r, waitMs));
+        continue;
+      }
+      // No time left — bail out cleanly instead of risking a platform timeout.
+      return NextResponse.json(
+        {
+          error:
+            "The model is warming up on Hugging Face. Wait ~20s and try again — the first request after idle loads the model. (Or use On-device mode, which has no cold start.)",
+        },
+        { status: 503 }
+      );
     }
 
     // Other errors — surface a clean message.
