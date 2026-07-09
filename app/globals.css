@@ -130,6 +130,156 @@ body {
   margin: 0 auto;
 }
 
+/* Mode selector */
+.modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 6px;
+  margin-bottom: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--card-border);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.mode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease,
+    transform 0.1s ease;
+}
+
+.mode-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.mode:hover:not(:disabled):not(.is-active) {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mode.is-active {
+  color: #fff;
+  background: var(--grad);
+  background-size: 200% 200%;
+  animation: hue 6s linear infinite;
+  box-shadow: 0 8px 22px -10px var(--g2);
+}
+
+.mode:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.mode:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Per-mode config */
+.mode-config {
+  margin-bottom: 18px;
+}
+
+.config-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.field select,
+.field input {
+  width: 100%;
+  padding: 11px 13px;
+  border-radius: 12px;
+  border: 1px solid var(--ring);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  outline: none;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.field select:focus,
+.field input:focus {
+  border-color: rgba(168, 85, 247, 0.7);
+  background: rgba(168, 85, 247, 0.08);
+}
+
+.field select option {
+  background: #16162a;
+  color: var(--text);
+}
+
+.hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.hint code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e9d5ff;
+}
+
+.hint a {
+  color: #c084fc;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.hint a:hover {
+  text-decoration: underline;
+}
+
+/* On-device download progress */
+.bar {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--grad);
+  background-size: 200% 200%;
+  animation: hue 6s linear infinite;
+  transition: width 0.3s ease;
+}
+
 /* Mic zone */
 .mic-zone {
   display: flex;
@@ -454,6 +604,8 @@ body {
   .mic-btn,
   .cta,
   .mic-btn.is-recording,
+  .mode.is-active,
+  .bar > span,
   .rec-pulse,
   .spinner {
     animation: none !important;

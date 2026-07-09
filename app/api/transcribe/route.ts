@@ -7,31 +7,50 @@ export const dynamic = "force-dynamic";
 // Give the request room to breathe while the model warms up / transcribes.
 export const maxDuration = 60;
 
-const MODEL = process.env.HF_MODEL || "Chonlasitk/whisper-burmese";
-const HF_URL = `https://api-inference.huggingface.co/models/${MODEL}`;
+// Default model for the "cloud" mode. This must be a model that is actually
+// served by an HF inference provider. The Chonlasitk Burmese fine-tune is NOT
+// hosted by any provider, so use it via the "custom endpoint" mode instead.
+const DEFAULT_MODEL = process.env.HF_MODEL || "openai/whisper-large-v3";
+
+// Hugging Face migrated the classic serverless endpoint
+// (api-inference.huggingface.co, now decommissioned) to the Inference
+// Providers router. `hf-inference` is HF's own first-party provider.
+const routerUrl = (model: string) =>
+  `https://router.huggingface.co/hf-inference/models/${model}`;
 
 // Max audio size accepted by the route. Vercel serverless bodies are capped
 // (~4.5 MB on Hobby), so we reject early with a friendly message.
 const MAX_BYTES = 4 * 1024 * 1024; // 4 MB
 
+function pickText(data: unknown): string | null {
+  if (data == null) return null;
+  if (typeof data === "string") return data;
+  const d = data as Record<string, unknown> & { data?: unknown[] };
+  if (typeof d.text === "string") return d.text;
+  if (Array.isArray(data) && typeof (data[0] as any)?.text === "string") {
+    return (data[0] as any).text;
+  }
+  // Gradio-style { data: [ "..." ] } responses.
+  if (Array.isArray(d.data) && typeof d.data[0] === "string") return d.data[0];
+  return null;
+}
+
 export async function POST(req: Request) {
   const token = process.env.HF_TOKEN;
-  if (!token) {
-    return NextResponse.json(
-      {
-        error:
-          "Server is missing HF_TOKEN. Add it in your environment (.env.local) or Vercel project settings.",
-      },
-      { status: 500 }
-    );
-  }
 
   let bytes: ArrayBuffer;
   let contentType = "application/octet-stream";
+  let mode = "cloud";
+  let model = DEFAULT_MODEL;
+  let endpoint = process.env.HF_ENDPOINT_URL || "";
 
   try {
     const form = await req.formData();
     const file = form.get("audio");
+    mode = (form.get("mode") as string) || "cloud";
+    model = (form.get("model") as string) || DEFAULT_MODEL;
+    endpoint = (form.get("endpoint") as string) || endpoint;
+
     if (!(file instanceof Blob)) {
       return NextResponse.json(
         { error: "No audio file was provided in the 'audio' field." },
@@ -39,16 +58,13 @@ export async function POST(req: Request) {
       );
     }
     if (file.size === 0) {
-      return NextResponse.json(
-        { error: "The audio file is empty." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "The audio file is empty." }, { status: 400 });
     }
     if (file.size > MAX_BYTES) {
       return NextResponse.json(
         {
           error:
-            "Audio is too large (limit ~4 MB on this deployment). Record a shorter clip or upload a smaller/compressed file.",
+            "Audio is too large (limit ~4 MB on this deployment). Record a shorter clip, upload a smaller file, or switch to On-device mode which has no size limit.",
         },
         { status: 413 }
       );
@@ -56,52 +72,84 @@ export async function POST(req: Request) {
     if (file.type) contentType = file.type;
     bytes = await file.arrayBuffer();
   } catch {
-    return NextResponse.json(
-      { error: "Could not read the uploaded audio." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Could not read the uploaded audio." }, { status: 400 });
   }
 
-  // The HF model can be cold. Retry a few times while it loads (503 + estimated_time).
+  // Resolve the target endpoint + headers for the selected mode.
+  let targetUrl: string;
+  const headers: Record<string, string> = {
+    "Content-Type": contentType,
+    Accept: "application/json",
+  };
+
+  if (mode === "custom") {
+    if (!endpoint) {
+      return NextResponse.json(
+        { error: "Custom endpoint mode needs an endpoint URL." },
+        { status: 400 }
+      );
+    }
+    try {
+      new URL(endpoint);
+    } catch {
+      return NextResponse.json({ error: "The custom endpoint URL is invalid." }, { status: 400 });
+    }
+    targetUrl = endpoint;
+    // Token is optional for custom endpoints; attach it if present.
+    if (token) headers.Authorization = `Bearer ${token}`;
+  } else {
+    if (!token) {
+      return NextResponse.json(
+        {
+          error:
+            "Server is missing HF_TOKEN. Add it in .env.local or your Vercel project settings, or switch to On-device mode.",
+        },
+        { status: 500 }
+      );
+    }
+    targetUrl = routerUrl(model);
+    headers.Authorization = `Bearer ${token}`;
+    headers["x-wait-for-model"] = "true";
+  }
+
+  // The model can be cold. Retry a few times while it loads (503 + estimated_time).
   const maxAttempts = 4;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let hfRes: Response;
     try {
-      hfRes = await fetch(HF_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": contentType,
-          Accept: "application/json",
-          "x-wait-for-model": "true",
-        },
-        body: bytes,
-      });
+      hfRes = await fetch(targetUrl, { method: "POST", headers, body: bytes });
     } catch {
       return NextResponse.json(
-        { error: "Could not reach the Hugging Face Inference API." },
+        {
+          error:
+            mode === "custom"
+              ? "Could not reach the custom endpoint. Check the URL is live and reachable."
+              : "Could not reach the Hugging Face inference router.",
+        },
         { status: 502 }
       );
     }
 
     if (hfRes.ok) {
-      const data = await hfRes.json().catch(() => null);
-      const text =
-        (data && (data.text ?? data?.[0]?.text)) ?? "";
+      const ct = hfRes.headers.get("content-type") || "";
+      const data = ct.includes("application/json")
+        ? await hfRes.json().catch(() => null)
+        : await hfRes.text().catch(() => null);
+      const text = pickText(data);
       if (typeof text !== "string") {
         return NextResponse.json(
           { error: "Unexpected response from the model." },
           { status: 502 }
         );
       }
-      return NextResponse.json({ text: text.trim(), model: MODEL });
+      return NextResponse.json({ text: text.trim(), model: mode === "custom" ? endpoint : model });
     }
 
     // Model still loading — wait and retry.
     if (hfRes.status === 503 && attempt < maxAttempts) {
       const info = await hfRes.json().catch(() => null);
       const waitMs = Math.min(
-        Math.round(((info?.estimated_time as number) || 8) * 1000),
+        Math.round((((info as any)?.estimated_time as number) || 8) * 1000),
         20000
       );
       await new Promise((r) => setTimeout(r, waitMs));
@@ -112,15 +160,29 @@ export async function POST(req: Request) {
     const detail = await hfRes.text().catch(() => "");
     if (hfRes.status === 401 || hfRes.status === 403) {
       return NextResponse.json(
-        { error: "Hugging Face rejected the token (401/403). Check HF_TOKEN." },
+        {
+          error:
+            mode === "custom"
+              ? "The custom endpoint rejected the request (401/403). It may need a token."
+              : "Hugging Face rejected the token (401/403). Check HF_TOKEN.",
+        },
+        { status: 502 }
+      );
+    }
+    if (hfRes.status === 404) {
+      return NextResponse.json(
+        {
+          error:
+            mode === "custom"
+              ? `Endpoint returned 404. Double-check the URL: ${endpoint}`
+              : `Model "${model}" is not served by the hf-inference provider (404). Pick a hosted model, or use Custom endpoint / On-device mode.`,
+          detail: detail?.slice(0, 300),
+        },
         { status: 502 }
       );
     }
     return NextResponse.json(
-      {
-        error: `Transcription failed (HF status ${hfRes.status}).`,
-        detail: detail?.slice(0, 300),
-      },
+      { error: `Transcription failed (status ${hfRes.status}).`, detail: detail?.slice(0, 300) },
       { status: 502 }
     );
   }
