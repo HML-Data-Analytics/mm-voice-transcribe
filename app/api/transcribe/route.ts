@@ -115,19 +115,49 @@ export async function POST(req: Request) {
     }
     targetUrl = routerUrl(model);
     headers.Authorization = `Bearer ${token}`;
-    headers["x-wait-for-model"] = "true";
+    // NOTE: we intentionally do NOT send `x-wait-for-model`. That header makes
+    // HF hold the connection open until a cold model finishes loading, which
+    // for whisper-large-v3 routinely exceeds Vercel's function limit and yields
+    // a 504 platform page (non-JSON). Instead we let HF return 503 immediately
+    // and manage warm-up retries ourselves, within a strict time budget.
   }
 
   // The model can be cold. Retry while it loads (503 + estimated_time), but
   // stay under the function time limit so we always return clean JSON instead
   // of letting the platform kill the request with an HTML error page.
-  const maxAttempts = 4;
+  const maxAttempts = 5;
   const deadline = Date.now() + 45_000; // leave headroom under maxDuration (60s)
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let hfRes: Response;
     try {
-      hfRes = await fetch(targetUrl, { method: "POST", headers, body: bytes });
-    } catch {
+      // Abort each individual request well before the platform limit, so a
+      // hung/slow HF connection can never kill the function with a 504.
+      const budget = deadline - Date.now();
+      if (budget <= 1500) break;
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), Math.min(budget, 20_000));
+      try {
+        hfRes = await fetch(targetUrl, {
+          method: "POST",
+          headers,
+          body: bytes,
+          signal: ctrl.signal,
+        });
+      } finally {
+        clearTimeout(t);
+      }
+    } catch (err) {
+      // AbortError = our own timeout while the model was slow/loading.
+      if ((err as any)?.name === "AbortError") {
+        if (Date.now() < deadline && attempt < maxAttempts) continue;
+        return NextResponse.json(
+          {
+            error:
+              "The cloud model is taking too long to warm up (Hugging Face cold start). Wait ~30s and try again, or use On-device mode which has no cold start.",
+          },
+          { status: 503 }
+        );
+      }
       return NextResponse.json(
         {
           error:
