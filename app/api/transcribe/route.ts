@@ -71,8 +71,14 @@ export async function POST(req: Request) {
     }
     if (file.type) contentType = file.type;
     bytes = await file.arrayBuffer();
-  } catch {
-    return NextResponse.json({ error: "Could not read the uploaded audio." }, { status: 400 });
+  } catch (err) {
+    return NextResponse.json(
+      {
+        error: "Could not read the uploaded audio.",
+        detail: err instanceof Error ? err.message : String(err),
+      },
+      { status: 400 }
+    );
   }
 
   // Resolve the target endpoint + headers for the selected mode.
