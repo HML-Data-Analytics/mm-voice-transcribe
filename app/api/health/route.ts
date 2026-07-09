@@ -31,12 +31,18 @@ function tinyWav(): Buffer {
 // the raw status/body so we can see if the model is served / warming / cold.
 export async function GET(req: Request) {
   const token = process.env.HF_TOKEN || "";
-  const model = process.env.HF_MODEL || "openai/whisper-large-v3";
+  const configuredModel = process.env.HF_MODEL || "openai/whisper-large-v3-turbo";
+  // Mirror the transcribe route's safety-net swap so this reflects reality.
+  const model =
+    configuredModel === "openai/whisper-large-v3"
+      ? "openai/whisper-large-v3-turbo"
+      : configuredModel;
   const base = {
     ok: true,
     hasToken: token.length > 0,
     tokenLength: token.length,
     tokenLooksValid: /^hf_[A-Za-z0-9]{20,}$/.test(token),
+    configuredModel,
     model,
     hasCustomEndpoint: Boolean(process.env.HF_ENDPOINT_URL),
     node: process.version,

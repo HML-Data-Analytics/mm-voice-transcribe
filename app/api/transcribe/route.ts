@@ -15,6 +15,14 @@ export const maxDuration = 60;
 // any provider — use it via "custom endpoint" mode instead.
 const DEFAULT_MODEL = process.env.HF_MODEL || "openai/whisper-large-v3-turbo";
 
+// Safety net: plain whisper-large-v3 IS served by hf-inference but its cold
+// start blows past the serverless time limit, so it always 504s from Vercel.
+// Its warm, drop-in equivalent is the turbo variant — swap automatically so a
+// stale HF_MODEL env value can't silently break Cloud mode.
+function resolveModel(m: string): string {
+  return m === "openai/whisper-large-v3" ? "openai/whisper-large-v3-turbo" : m;
+}
+
 // Hugging Face migrated the classic serverless endpoint
 // (api-inference.huggingface.co, now decommissioned) to the Inference
 // Providers router. `hf-inference` is HF's own first-party provider.
@@ -51,7 +59,7 @@ export async function POST(req: Request) {
     const form = await req.formData();
     const file = form.get("audio");
     mode = (form.get("mode") as string) || "cloud";
-    model = (form.get("model") as string) || DEFAULT_MODEL;
+    model = resolveModel((form.get("model") as string) || DEFAULT_MODEL);
     endpoint = (form.get("endpoint") as string) || endpoint;
 
     if (!(file instanceof Blob)) {
