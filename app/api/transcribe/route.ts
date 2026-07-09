@@ -164,7 +164,8 @@ export async function POST(req: Request) {
           error:
             mode === "custom"
               ? "The custom endpoint rejected the request (401/403). It may need a token."
-              : "Hugging Face rejected the token (401/403). Check HF_TOKEN.",
+              : "Hugging Face rejected the token (401/403). The token likely lacks Inference permission — create a token with \"Make calls to Inference Providers\" enabled (or a classic Read token), and make sure it's set in the server env and redeployed.",
+          detail: detail?.slice(0, 300),
         },
         { status: 502 }
       );
