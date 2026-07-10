@@ -94,10 +94,12 @@ export async function POST(req: Request) {
 
   // Resolve the target endpoint + headers for the selected mode.
   let targetUrl: string;
+  let body: BodyInit;
   const headers: Record<string, string> = {
     "Content-Type": contentType,
     Accept: "application/json",
   };
+  body = bytes;
 
   if (mode === "custom") {
     if (!endpoint) {
@@ -131,6 +133,17 @@ export async function POST(req: Request) {
     // for whisper-large-v3 routinely exceeds Vercel's function limit and yields
     // a 504 platform page (non-JSON). Instead we let HF return 503 immediately
     // and manage warm-up retries ourselves, within a strict time budget.
+
+    // Sending raw bytes gives HF no way to receive `parameters`, so without a
+    // language hint Whisper auto-detects the spoken language — and for short
+    // or noisy Burmese clips it frequently misdetects English, transcribing
+    // gibberish English instead of Burmese script. Switch to HF's JSON+base64
+    // request shape so we can force language="my" + task="transcribe".
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify({
+      inputs: Buffer.from(bytes).toString("base64"),
+      parameters: { language: "my", task: "transcribe" },
+    });
   }
 
   // The model can be cold. Retry while it loads (503 + estimated_time), but
@@ -151,7 +164,7 @@ export async function POST(req: Request) {
         hfRes = await fetch(targetUrl, {
           method: "POST",
           headers,
-          body: bytes,
+          body,
           signal: ctrl.signal,
         });
       } finally {
