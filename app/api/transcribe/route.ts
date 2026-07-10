@@ -139,10 +139,14 @@ export async function POST(req: Request) {
     // or noisy Burmese clips it frequently misdetects English, transcribing
     // gibberish English instead of Burmese script. Switch to HF's JSON+base64
     // request shape so we can force language="my" + task="transcribe".
+    // NOTE: `language`/`task` must be nested under `generate_kwargs` — HF's
+    // ASR pipeline forwards `parameters` as kwargs to its `__call__`, which
+    // only accepts generate_kwargs/return_timestamps/chunk_length_s/etc, not
+    // top-level `language`/`task`. Passing them unnested 400s the request.
     headers["Content-Type"] = "application/json";
     body = JSON.stringify({
       inputs: Buffer.from(bytes).toString("base64"),
-      parameters: { language: "my", task: "transcribe" },
+      parameters: { generate_kwargs: { language: "my", task: "transcribe" } },
     });
   }
 
